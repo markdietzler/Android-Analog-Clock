@@ -8,379 +8,193 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.support.annotation.Nullable;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.View;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
+import java.util.Observable;
 
-public class AnalogClock extends View {
+public class AnalogClock extends View implements TimeAnimator.TimeListener {
 
-    private int mHeight;
-    private int mWidth;
+    TimeAnimator mTimer = new TimeAnimator();
+    final static float overallWidth = 110.0f, overallHeight = 110.0f, handLength = 40.0f;
+    final static float ASPECT_RATIO = 1f;
+    final static float[] minuteHand = new float[]{-02.5f, 0, 0, 40.25f, 02.5f, 0, 0, -02.5f, -02.5f, 0};
+    final static float[] hourHand = new float[]{-05f, 0, 0, 30.5f, 05f, 0, 0, -05f, -05f, 0};
 
-    private Path mHourHand;
-    private Path mMinuteHand;
-    private Paint paint;
+    int mViewWidth, mViewHeight;
+    Boolean hourFormat = Boolean.FALSE;
+    private static final float mSECOND_DEGREES = 360/-60;
 
-    private static long TIMER_MSEC = 100;
-    long mLastTimne = System.currentTimeMillis();
-
-    private TimeAnimator mTimer = new TimeAnimator();
-
-    private TimeTransfer timeTransfer = new TimeTransfer();
-
-    private static final int mBOXHEIGHT = 320;
-    private static final int mBOXWIDTH = 320;
-
-    private static final float mSECONMD_DEGREES = 360/-60;
-
-    final int mMinuteHandColor = Color.argb(255,216,49,94);
-    final int mHourHandColor = Color.argb(255,0,9,246);
-
-    private static final float[] mHourHandCoordinates = {0,-15,-10,-5,-10,5,0,60,10,5,10,-5};
-    private static final float[] mMintueHandCoordinates = {0,-10,-5,-5,-5,5,0,135,5,5,5,-5};
+    public HourMinSec hourMinSec = new HourMinSec();
 
     public AnalogClock(Context context) {
         super(context);
     }
 
-    public AnalogClock(Context context, AttributeSet attrs) {
+    public AnalogClock(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
-        init(attrs);
+        Init();
     }
 
-    public AnalogClock(Context context, AttributeSet attrs, int defStyleAttr) {
+    public AnalogClock(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-        init(attrs);
+        Init();
     }
 
-    public AnalogClock(Context context, @Nullable AttributeSet attrs, int defStyleAttr, int defStyleRes) {
-        super(context, attrs, defStyleAttr, defStyleRes);
-        init(attrs);
-    }
-
-    private void init(@Nullable AttributeSet set) {
-        paint = new Paint();
-        mHourHand = new Path();
-        mMinuteHand = new Path();
-     }
-
-    @Override
-    protected void onDraw(Canvas canvas) {
-        super.onDraw(canvas);
-        canvas.drawRGB(118,113,192);
-
-
-        GregorianCalendar clock = new GregorianCalendar();
-
-        float scaleWidth = mWidth/mBOXWIDTH; //box is 320 wide
-        float scaleHeight = -1 * mHeight/mBOXHEIGHT; //box is 320 tall
-        canvas.scale(scaleWidth,scaleHeight);
-
-        canvas.translate(160,-160);
-
-        canvas.save();
-        int second = clock.get(Calendar.SECOND);
-        canvas.rotate(mSECONMD_DEGREES * second);
-        drawSecondHand(canvas);
-        canvas.restore();
-
-
-        canvas.save();
-        int hour = clock.get(Calendar.HOUR);
-        canvas.rotate((mSECONMD_DEGREES * 5) * hour);
-        drawHourHand(canvas);
-        canvas.restore();
-
-        canvas.save();
-        int minute = clock.get(Calendar.MINUTE);
-        canvas.rotate(mSECONMD_DEGREES * minute);
-        drawMinuteHand(canvas);
-        canvas.restore();
-
-        canvas.save();
-        drawClockCircle(canvas);
-        canvas.restore();
-
-        canvas.save();
-        drawClockTicks(canvas);
-        canvas.restore();
-
-        String time = "" + hour + ":" + minute + ":" + second;
-
-        timeTransfer.setTime(time);
+    private void Init(){
+        setLayerType(LAYER_TYPE_SOFTWARE, null);
+        startTimer();
     }
 
     @Override
-    protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
-        super.onSizeChanged(width, height, oldHeight, oldHeight);
-        mHeight = height;
-        mWidth = width;
-    }
+    public void onDraw(Canvas canvas) {
+        float width = getWidth();
+        float height = getHeight();
+        float scaleX = (width/overallWidth);
+        float scaleY = (height/overallHeight);
+        canvas.save();
 
-    @Override
-    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        canvas.scale(scaleX , -scaleY);
+        canvas.translate(overallWidth/2.0f, -overallHeight/2.0f);
+        Paint paint = new Paint();
 
-        Log.v("[View name] onMeasure w", MeasureSpec.toString(widthMeasureSpec));
-        Log.v("[View name] onMeasure h", MeasureSpec.toString(heightMeasureSpec));
+        //set up canvas to draw on
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(1f);
+        paint.setColor(Color.RED);
+        canvas.save();
 
-        int desiredHeight = 320;
-        int desiredWidth = 320;
+        //get time
+        GregorianCalendar gregorianCalendar = new GregorianCalendar();
+        int hour = gregorianCalendar.get(Calendar.HOUR);
+        int minute = gregorianCalendar.get(Calendar.MINUTE);
+        int second = gregorianCalendar.get(Calendar.SECOND);
 
-        int widthMode = MeasureSpec.getMode(widthMeasureSpec);
-        int widthSize = MeasureSpec.getSize(widthMeasureSpec);
+        float hourTick = 30/60 * minute;
 
-        int heightMode = MeasureSpec.getMode(heightMeasureSpec);
-        int heightSize = MeasureSpec.getSize(heightMeasureSpec);
+        //draw hour hand
+        canvas.save();
+        paint.setColor(Color.RED);
+        Path hourPath = new Path();
+        hourPath.moveTo(hourHand[0], hourHand[1]);
+        hourPath.lineTo(hourHand[2], hourHand[3]);
+        hourPath.lineTo(hourHand[4], hourHand[5]);
+        hourPath.lineTo(hourHand[6], hourHand[7]);
+        hourPath.lineTo(hourHand[8], hourHand[9]);
+        hourPath.close();
+        canvas.rotate((mSECOND_DEGREES * 5) * hour + hourTick);
+        canvas.drawPath(hourPath, paint);
+        canvas.restore();
 
-        int width, height;
+        //draw minute hand
+        canvas.save();
+        paint.setColor(Color.BLACK);
+        Path minutePath = new Path();
+        paint.setStyle(Paint.Style.FILL_AND_STROKE);
+        minutePath.moveTo(minuteHand[0], minuteHand[1]);
+        minutePath.lineTo(minuteHand[2],minuteHand[3]);
+        minutePath.lineTo(minuteHand[4], minuteHand[5]);
+        minutePath.lineTo(minuteHand[6], minuteHand[7]);
+        minutePath.lineTo(minuteHand[8], minuteHand[9]);
+        minutePath.close();
+        canvas.rotate(mSECOND_DEGREES * minute);
+        canvas.drawPath(minutePath, paint);
+        canvas.restore();
 
-        //Measure Width
-        if (widthMode == MeasureSpec.EXACTLY) {
-            //Must be this size
-            width = widthSize;
-        } else if (widthMode == MeasureSpec.AT_MOST) {
-            //Can't be bigger than...
-            width = Math.min(desiredWidth, widthSize);
-        } else {
-            //Be whatever you want
-            width = desiredWidth;
+        //draw seconds hand
+        paint.setColor((Color.RED));
+        canvas.rotate(second * mSECOND_DEGREES);
+        canvas.drawLine(0, 0,0,handLength,paint);
+        canvas.restore();
+
+        //draw big circle ticks
+        for(int circleTics = 0 ; circleTics <= 12 ; circleTics++){
+            paint.setColor(Color.BLACK);
+            canvas.save();
+            canvas.rotate(circleTics*30);
+            canvas.drawLine(0,40,0,50, paint);
+            canvas.restore();
         }
 
-        //Measure Height
-        if (heightMode == MeasureSpec.EXACTLY) {
-            //Must be this size
-            height = heightSize;
-        } else if (heightMode == MeasureSpec.AT_MOST) {
-            //Can't be bigger than...
-            height = Math.min(desiredHeight, heightSize);
-        } else {
-            //Be whatever you want
-            height = desiredHeight;
+        //draw little circle ticks
+        paint.setStrokeWidth(0.5f);
+        paint.setColor((Color.BLACK));
+        for(int minuteTics = 0 ; minuteTics <= 60 ; minuteTics++){
+            canvas.save();
+            canvas.rotate(minuteTics*6);
+            canvas.drawLine(0,45, 0, 50, paint);
+            canvas.restore();
         }
 
-        setMeasuredDimension(width,height);
-    }
-
-    private void drawMinuteHand(Canvas canvas) {
-        paint.reset();
-        paint.setColor(mMinuteHandColor);
-        paint.setAntiAlias(true);
-        mMinuteHand.moveTo(0,0);
-        mMinuteHand.lineTo(mMintueHandCoordinates[0],mMintueHandCoordinates[1]);
-        mMinuteHand.lineTo(mMintueHandCoordinates[2],mMintueHandCoordinates[3]);
-        mMinuteHand.lineTo(mMintueHandCoordinates[4],mMintueHandCoordinates[5]);
-        mMinuteHand.lineTo(mMintueHandCoordinates[6],mMintueHandCoordinates[7]);
-        mMinuteHand.lineTo(mMintueHandCoordinates[8],mMintueHandCoordinates[9]);
-        mMinuteHand.lineTo(mMintueHandCoordinates[10],mMintueHandCoordinates[11]);
-        mMinuteHand.lineTo(mMintueHandCoordinates[0],mMintueHandCoordinates[1]);
-        mMinuteHand.close();
-        canvas.drawPath(mMinuteHand, paint);
-    }
-
-    private void drawHourHand(Canvas canvas) {
-        paint.reset();
-        paint.setColor(mHourHandColor);
-        paint.setAntiAlias(true);
-        mHourHand.moveTo(0,0);
-        mHourHand.lineTo(mHourHandCoordinates[0],mHourHandCoordinates[1]);   //1
-        mHourHand.lineTo(mHourHandCoordinates[2],mHourHandCoordinates[3]);   //2
-        mHourHand.lineTo(mHourHandCoordinates[4],mHourHandCoordinates[5]);   //3
-        mHourHand.lineTo(mHourHandCoordinates[6],mHourHandCoordinates[7]);   //4
-        mHourHand.lineTo(mHourHandCoordinates[8],mHourHandCoordinates[9]);   //5
-        mHourHand.lineTo(mHourHandCoordinates[10],mHourHandCoordinates[11]);   //6
-        mHourHand.lineTo(mHourHandCoordinates[0],mHourHandCoordinates[1]); //15
-        mHourHand.close();
-        canvas.drawPath(mHourHand, paint);
-    }
-
-    private void drawSecondHand(Canvas canvas) {
-        paint.reset();
-        paint.setColor(Color.WHITE);
-        paint.setAntiAlias(true);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(1);
-        canvas.drawLine(0,0,0,145,paint);
-    }
-
-    private void drawClockCircle(Canvas canvas) {
-        paint.reset();
-        paint.setColor(Color.WHITE);
-        paint.setAntiAlias(true);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(1);
-        int radius = 158;
-        canvas.drawCircle(0,0,radius,paint);
-    }
-
-    private void drawClockTicks(Canvas canvas) {
-        paint.reset();
-        paint.setColor(Color.WHITE);
-        //paint.setAntiAlias(true);
-        paint.setStyle(Paint.Style.STROKE);
-        canvas.save();
-        float hourTicker = 0;
-        canvas.drawLine(0,147,0,152,paint);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,147,0,152,paint);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,147,0,152,paint);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,147,0,152,paint);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,147,0,152,paint);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,147,0,152,paint);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,147,0,152,paint);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,147,0,152,paint);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,147,0,152,paint);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,147,0,152,paint);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,147,0,152,paint);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,147,0,152,paint);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,152,0,158,paint);
-        canvas.rotate(mSECONMD_DEGREES);
-        canvas.drawLine(0,147,0,152,paint);
-        canvas.drawLine(0,152,0,158,paint);
-
         canvas.restore();
+
+        if(hourFormat) {
+            hourMinSec.setHourMinuteSeconds(hour, minute, second);
+        }
+        else{
+            hourMinSec.setHourMinuteSeconds(gregorianCalendar.get(Calendar.HOUR),minute,second);
+        }
     }
 
     @Override
-    protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec){
+        super.onMeasure(widthMeasureSpec,heightMeasureSpec);
+        float wSize = View.MeasureSpec.getSize(widthMeasureSpec);
+        float hSize = View.MeasureSpec.getSize(heightMeasureSpec);
+        float width, height;
+        height = wSize / ASPECT_RATIO;
+        width = hSize * ASPECT_RATIO;
+        if(height>hSize){
+            this.setMeasuredDimension((int)width, (int)hSize);
+        }
+        else {
+            this.setMeasuredDimension((int) wSize, (int) height);
+        }
+    }
+
+    @Override
+    public void onTimeUpdate(TimeAnimator animation, long totalTime, long deltaTime) {
+        invalidate();
+    }
+
+    @Override
+    protected void onSizeChanged(int incomingWidth, int incomingHeight, int oldWidth, int oldHeight){
+        super.onSizeChanged(incomingWidth, incomingHeight, oldWidth, oldHeight);
+        mViewHeight = incomingHeight;
+        mViewWidth = incomingWidth;
+    }
+
+    public void startTimer() {
         mTimer.setTimeListener(new TimeAnimator.TimeListener() {
             @Override
             public void onTimeUpdate(TimeAnimator animation, long totalTime, long deltaTime) {
-                long now = System.currentTimeMillis();
-                if((now-mLastTimne)<TIMER_MSEC)
-                    return;
-                mLastTimne = now;
-                postInvalidate();
+                invalidate();
             }
         });
         mTimer.start();
     }
 
-    @Override
-    protected void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-        mTimer.cancel();
-        mTimer.setTimeListener(null);
-        mTimer.removeAllListeners();
-        mTimer = null;
-    }
+    class HourMinSec extends Observable {
+        int mHour, mMin, mSec;
 
+        public int getHour() {
+            return mHour;
+        }
+
+        public int getMin() {
+            return mMin;
+        }
+
+        public int getSec() {
+            return mSec;
+        }
+
+        public void setHourMinuteSeconds(int newHour, int newMinute, int newSecond){
+            mHour = newHour;
+            mMin = newMinute;
+            mSec = newSecond;
+            setChanged();
+            notifyObservers("Clock");
+        }
+    }
 }

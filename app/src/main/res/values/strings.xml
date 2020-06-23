@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">mdietzlerLab5</string>
+    <string name="app_name">Mark Dietzler Lab 5</string>
     <string name="about_string">About</string>
-    <string name="clock_init">00:00:00</string>
+    <string name="digital_clock_init">00:00:00</string>
 </resources>
